@@ -1,9 +1,12 @@
 import imp
 import math
+import pickle
 import random
+from itertools import combinations_with_replacement
 
 import dgl
 from dgl import DGLGraph
+from dgl.data import *
 import networkx as nx
 import networkx.algorithms.isomorphism as nx_iso
 import torch
@@ -41,10 +44,29 @@ def collate(samples):
     return batched_g, batched_q, labels
 
 
+def gen_smb_random(num_graphs, min_num_v, max_num_v, p):
+    for _ in range(num_graphs):
+        num_v = random.randint(min_num_v, max_num_v)
+        
+        g = nx.Graph(nx.stochastic_block_model(sizes=[num_v], p=[[p]]))
+
+        for v in range(g.number_of_nodes()):
+            g.nodes[v]['l'] = random.randint(0, 3)        
+        yield g
+
+def gen_all_triangles():
+    label_combinations = combinations_with_replacement([0, 1, 2, 3], 3)
+    for label_combination in range(label_combinations):
+        g = nx.Graph(nx.cycle_graph(n=3))
+        
+        for idx, label in enumerate(label_combination):
+            g.nodes[idx]['l'] = label
+        yield g
+
 def gen_gnp_random(num_graphs, min_num_v, max_num_v, p):
     for _ in range(num_graphs):
         num_v = random.randint(min_num_v, max_num_v)        
-
+        
         g = nx.Graph(nx.fast_gnp_random_graph(num_v, p))
 
         # convert g into a connected graph
@@ -88,3 +110,17 @@ def count_subisos(g: nx.Graph, q: nx.Graph, node_match=node_match):
     return float(num_subisos)
 
 
+def save_dataset(dataset, name):
+    save_graphs(f'./data/{name}_g.dat', [graph_and_label[0][0] for graph_and_label in dataset])
+    save_graphs(f'./data/{name}_q.dat', [graph_and_label[0][1] for graph_and_label in dataset])
+    with open(f'./data/{name}_l.dat', 'wb') as fp:
+        pickle.dump([graph_and_label[1] for graph_and_label in dataset], fp)
+
+def load_dataset(name):
+    gs = load_graphs(f'./data/{name}_g.dat')
+    qs = load_graphs(f'./data/{name}_q.dat')
+    with open(f'./data/{name}_l.dat', 'rb') as fp:
+        ls = pickle.load(fp)
+    
+    dataset = [((g, q), l) for g, q, l in zip(gs[0], qs[0], ls)]
+    return dataset
