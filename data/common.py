@@ -44,14 +44,18 @@ def collate(samples):
     return batched_g, batched_q, labels
 
 
-def gen_smb_random(num_graphs, min_num_v, max_num_v, p):
+def gen_smb_random(num_graphs, num_blocks, min_num_v, max_num_v, p, force_connected=False):
     for _ in range(num_graphs):
-        num_v = random.randint(min_num_v, max_num_v)
-        
-        g = nx.Graph(nx.stochastic_block_model(sizes=[num_v], p=[[p]]))
+        sizes = [random.randint(min_num_v, max_num_v) for i in range(num_blocks)]
+        ps = [[p for j in range(num_blocks)] for i in range(num_blocks)]
+
+        g = nx.Graph(nx.stochastic_block_model(sizes=sizes, p=ps))
+        while force_connected and not nx.is_connected(g):
+            g = nx.Graph(nx.stochastic_block_model(sizes=sizes, p=ps))
 
         for v in range(g.number_of_nodes()):
             g.nodes[v]['l'] = random.randint(0, 3)        
+        
         yield g
 
 def gen_all_triangles():
