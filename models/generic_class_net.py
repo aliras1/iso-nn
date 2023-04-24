@@ -84,11 +84,9 @@ class GenericClassNet(nn.Module):
         self._forward_graph(q, X_q, self.gnn_layers_q, self.mlp_q)  
         #--------------
 
-
-
         q_representation = dgl.mean_nodes(q.graph, 'H')
         batch_size = len(g.sizes_n)
-        m = torch.zeros(g.graph.num_nodes(), batch_size)        
+        m = torch.zeros(g.graph.num_nodes(), batch_size)            
 
         offset = 0
         for i in range(batch_size):

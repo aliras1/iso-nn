@@ -15,7 +15,7 @@ def gen_dataset(num_g, min_num_nodes, max_num_nodes, edge_probability):
     def gen_g():
         yield from gen_smb_random(num_g, 5, min_num_nodes, max_num_nodes, edge_probability)
     def gen_q():
-        yield from gen_smb_random(num_g, 1, 4, 6, 0.51, force_connected=True)
+        yield from gen_smb_random(num_g, 1, 7, 8, 0.2, force_connected=True)
 
 
     zipped_data = [] 

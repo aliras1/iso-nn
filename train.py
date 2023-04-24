@@ -39,7 +39,9 @@ def draw(G, title):
 
 # Generate artifical graph dataset
 num_g = 512
-num_q = 8
+num_q = 1
+# num_g = 512
+# num_q = 8
 # num_g = 1000
 # num_q = 15
 dataset_size = num_g * num_q

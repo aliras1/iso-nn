@@ -52,7 +52,7 @@ edge_probability = 0.2
 start_tic = time.perf_counter()
 # dataset = generic_class_gen.gen_dataset(num_g, min_num_nodes, max_num_nodes, edge_probability)
 # generic_class_gen.save_dataset(dataset, "generic_class_10000")
-dataset = generic_class_gen.load_dataset("generic_class_10000")
+dataset = generic_class_gen.load_dataset("generic_class_1000")
 
 dataset_size = len(dataset)
 trainset_perc = 0.77
@@ -140,8 +140,8 @@ train_loader = DataLoader(trainset, batch_size=50, shuffle=True, collate_fn=coll
 test_loader = DataLoader(testset, batch_size=50, shuffle=False, collate_fn=collate)
 
 # Create model
-# model = GenericClassNet(input_dim=5, hidden_dim=100, output_dim=50, L=8)
-model = torch.load('./models/model_generic_class_net4.pth')
+model = GenericClassNet(input_dim=5, hidden_dim=100, output_dim=50, L=8)
+# model = torch.load('./models/model_generic_class_net4.pth')
 loss = nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0)
 
