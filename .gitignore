@@ -1,3 +1,6 @@
 **.vscode
 *.pth
 **/__pycache__
+*.dat
+*.csv
+*.pdf
