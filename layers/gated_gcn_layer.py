@@ -32,7 +32,7 @@ class GatedGCN_layer(nn.Module):
         h = Ax + torch.sum(σ_j * Bx_j, dim=1) / torch.sum(σ_j, dim=1)
         return {'H' : h}
     
-    def forward(self, g: GraphBatch, X, snorm_n):        
+    def forward(self, g: GraphBatch, X):        
         g.ndata['H']  = X
         g.ndata['AX'] = self.A(X) 
         g.ndata['BX'] = self.B(X) 
@@ -46,6 +46,7 @@ class GatedGCN_layer(nn.Module):
         H = g.ndata['H'] # result of graph convolution
         # E = g.graph.edata['E'] # result of graph convolution
         
+        snorm_n = 1.0 / g.number_of_nodes()
         H *= snorm_n # normalize activation w.r.t. graph node size
         # E *= g.snorm_e # normalize activation w.r.t. graph edge size
         

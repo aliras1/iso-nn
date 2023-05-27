@@ -1,111 +1,159 @@
 import dgl
-import networkx as nx
-from res.plot_lib import set_default
+from gnnlens import Writer
 import matplotlib.pyplot as plt
+import networkx as nx
 import networkx.algorithms.isomorphism as nx_iso
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from dgl.data import CoraGraphDataset
-from gnnlens import Writer
-import torch
+from torcheval.metrics import (
+    BinaryAccuracy,
+    BinaryF1Score,
+    BinaryConfusionMatrix,
+    BinaryAUROC,
+)
+from torcheval.tools import get_module_summary
 
-from data import generic_class_gen
-from data.common import collate_graphs
+from data import *
 
 
-model = torch.load('./models/model_generic_class_net_10000_medium_0.9009.pth')
-
-num_g = 64
-num_q = 8
-
-def draw(g):
+def draw(g: dgl.DGLGraph) -> None:
     g_nx = dgl.to_networkx(g)
-    pos = nx.drawing.layout.spring_layout(
-        g_nx,
-        k=2)
+    pos = nx.drawing.layout.spring_layout(g_nx, k=2)
     nx.draw_networkx(
         g_nx,
         pos=pos,
         node_size=300,
-        edge_color='grey',
+        edge_color="grey",
         cmap=plt.cm.Reds,
         vmin=0,
-        vmax=1,)
+        vmax=1,
+    )
 
     ax = plt.gca()
     ax.margins(0.20)
     plt.axis("off")
     plt.show()
 
-def collate(samples):
-    gs, qs, labels = map(list, zip(*samples))  # samples is a list of pairs (graph, label)
-    labels = torch.cat(labels)
-    batched_g = collate_graphs(gs)
-    batched_q = collate_graphs(qs)
-    return batched_g, batched_q, labels
 
-# dataset = generic_class_gen.load_dataset("generic_class_1000")
-dataset = generic_class_gen.create_dataset_from_dgl(1)
-
-# writer = Writer('tutorial_graph')
-# nlabels = graph.ndata['label']
-# num_classes = 4
-# writer.add_graph(name='rnd', graph=graph,
-                # nlabels=nlabels, num_nlabel_types=num_classes)
+def line_to_epoch(line: str) -> tuple[float, float, float, float]:
+    strs = line.rstrip().split(",")
+    return tuple(map(lambda x: float(x), strs))
 
 
-# dataset = generic_class_gen.gen_dataset(1, 20, 30, 0.1)
-# dataset = dataset[:10]
-# dataset_split = int(len(dataset) * 0.77)
-# testset = dataset[dataset_split:]
-test_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=collate)
-threshold = 0.6
-loss_fn = nn.BCELoss()
+def draw_training_plot() -> None:
+    with open("logs.csv") as logs:
+        epochs = map(line_to_epoch, logs.readlines())
+        train_losses, train_accs, test_losses, test_accs = map(list, zip(*epochs))
+
+        print(f"accuracies: {max(train_accs)}, {max(test_accs)}")
+
+        fig, ax = plt.subplots()
+        ax.plot(train_losses, label="Train loss")
+        ax.plot(train_accs, label="Train accuracy")
+        leg = ax.legend()
+        plt.savefig("train_plot.pdf", format="pdf", bbox_inches="tight")
+        plt.show()
+        plt.clf()
+        plt.cla()
+
+        fig, ax = plt.subplots()
+        ax.plot(test_losses, label="Test loss")
+        ax.plot(test_accs, label="Test accuracy")
+        leg = ax.legend()
+        plt.savefig("test_plot.pdf", format="pdf", bbox_inches="tight")
+        plt.show()
 
 
-def visualize(g, h):
-    g_nx = dgl.to_networkx(g.graph)
-    pos = nx.drawing.layout.spring_layout(
-        g_nx,
-        k=2)
-    nx.draw_networkx(
-        g_nx,
-        pos=pos,
-        node_size=300,
-        edge_color='grey',
-        with_labels=True,
-        node_color=h,
-        cmap=plt.cm.Reds,
-        vmin=0,
-        vmax=1,)
+def analyze_dataset(dataset: List[DatasetEntry]) -> None:
+    print(f"dataset size: {len(dataset)}")
+    graphs = [entry[0] for entry in dataset]
 
-    ax = plt.gca()
-    ax.margins(0.20)
-    plt.axis("off")
-    plt.show()
+    nodes = torch.Tensor([graph.num_nodes() for graph in graphs])
+    avg_nodes = torch.mean(nodes)
 
-def node_match(u: dict, v: dict):
-    return (u['l'] == v['l']).item()
+    edges = torch.Tensor([graph.num_edges() for graph in graphs])
+    avg_edges = torch.mean(edges)
 
-def evaluate_accuracy(scores, labels, loss_fn, threshold):
-    J = loss_fn(scores, labels)
-    loss = J.detach().item()
-    classification = (scores > threshold).long()
-    acc = torch.sum(classification == labels).item()
-    nb_data = labels.size(0)
+    batch = dgl.batch(graphs, ndata=["feat"])
+    degrees = torch.mean(batch.in_degrees().float())
 
-    return (loss, acc, nb_data)
+    print(f"G: {{avg node: {avg_nodes}, avg edge: {avg_edges}, avg deg: {degrees}}}")
 
-def evaluate_iso(g, q, scores, threshold):
-    def get_label_from_feature(feature):        
+    ###############
+
+    patterns = [entry[1] for entry in dataset]
+    nodes = torch.Tensor([graph.num_nodes() for graph in patterns])
+    avg_nodes = torch.mean(nodes)
+
+    edges = torch.Tensor([graph.num_edges() for graph in patterns])
+    avg_edges = torch.mean(edges)
+
+    batch = dgl.batch(patterns, ndata=["feat"])
+    degrees = torch.mean(batch.in_degrees().float())
+
+    print(f"P: {{avg node: {avg_nodes}, avg edge: {avg_edges}, avg deg: {degrees}}}")
+
+    ##############
+
+    labels = [entry[2] for entry in dataset]
+    l = torch.concat(labels).squeeze()
+    size = l.size(dim=0)
+    sum = l.sum()
+    print(
+        f"#labels: {size}, #class1: {sum}, #class1/#labels: {sum / size}, #labels/#class1: {size / sum}"
+    )
+
+
+def visualize_predictions(dir: str) -> None:
+    writer = Writer(dir)
+    model.eval()
+
+    for i in range(min(5, len(dataset))):
+        graph = dataset[i][0]
+        pattern = dataset[i][1]
+        nlabels = graph.ndata["label"]
+        nlabels = torch.squeeze_copy(dataset[i][2])
+        writer.add_graph(
+            name=f"rnd-{i}", graph=graph, nlabels=nlabels, num_nlabel_types=4
+        )
+        writer.add_graph(
+            name=f"rnd-pattern-{i}",
+            graph=pattern,
+            nlabels=pattern.ndata["label"],
+            num_nlabel_types=4,
+        )
+
+        batch_gs, batch_qs, labels = collate([dataset[i]])
+        batch_X = batch_gs.graph.ndata["feat"]
+        batch_X_q = batch_qs.graph.ndata["feat"]
+
+        batch_scores = model(batch_gs, batch_X, batch_qs, batch_X_q)
+        pred = (batch_scores > 0.6).long()
+
+        writer.add_model(graph_name=f"rnd-{i}", model_name="GNN", nlabels=pred)
+        writer.add_model(
+            graph_name=f"rnd-{i}", model_name="labels", nlabels=graph.ndata["label"]
+        )
+
+    writer.close()
+
+
+def node_match(u: dict, v: dict) -> bool:
+    return (u["l"] == v["l"]).item()
+
+
+def evaluate_iso(
+    g: dgl.DGLGraph, q: dgl.DGLGraph, scores: torch.Tensor, threshold: float
+) -> float:
+    def get_label_from_feature(feature):
         return torch.argmax(feature[:, :-1], dim=1)
 
-    g.ndata['l'] = get_label_from_feature(g.ndata['feat'])
-    g_nx = g.to_networkx(node_attrs=['l'])
+    g.ndata["l"] = get_label_from_feature(g.ndata["feat"])
+    g_nx = g.to_networkx(node_attrs=["l"])
 
-    q.ndata['l'] = get_label_from_feature(q.ndata['feat'])
-    q_nx = q.to_networkx(node_attrs=['l'])
+    q.ndata["l"] = get_label_from_feature(q.ndata["feat"])
+    q_nx = q.to_networkx(node_attrs=["l"])
 
     classification = scores > threshold
     node_tensor = classification.nonzero()
@@ -120,41 +168,96 @@ def evaluate_iso(g, q, scores, threshold):
     subisos_orig = match_orig.subgraph_isomorphisms_iter()
     num_orig = len(list(subisos_orig)) + 1
 
-    acc = num_ml / num_orig                        
+    acc = num_ml / num_orig
     return acc
 
-def save_visuals(batch_scores, writer, threshold):
-    classification = (batch_scores > threshold).long()
-    writer.add_model(graph_name='rnd', model_name='GNN',
-            nlabels=classification)
 
-
-def evaluate(model, data_loader, threshold):
+def evaluate(model: nn.Module, data_loader: DataLoader, threshold: float) -> tuple:
     model.eval()
 
-    iso_acc = acc = nb_data = loss = 0
+    iso_acc = loss = 0
 
     with torch.no_grad():
         for iter, (batch_gs, batch_qs, batch_labels) in enumerate(data_loader):
-            batch_X = batch_gs.graph.ndata['feat']
-            batch_E = batch_gs.graph.edata['feat']
+            batch_X = batch_gs.graph.ndata["feat"]
+            batch_X_q = batch_qs.graph.ndata["feat"]
 
-            batch_X_q = batch_qs.graph.ndata['feat']
-            batch_E_q = batch_qs.graph.edata['feat']
-
-            batch_scores = model(batch_gs, batch_X, batch_E, batch_qs, batch_X_q, batch_E_q)
+            batch_scores = model(batch_gs, batch_X, batch_qs, batch_X_q)
 
             # save_visuals(batch_scores)
-            curr_loss, curr_acc, curr_nb_data = evaluate_accuracy(batch_scores, batch_labels, loss_fn, threshold)
-            acc += curr_acc
-            loss += curr_loss
-            loss /= iter + 1
-            acc /= curr_nb_data
-            nb_data += curr_nb_data
-            iso_acc += evaluate_iso(batch_gs.graph, batch_qs.graph, batch_scores, threshold)
-            iso_acc /= iter + 1
-    return (iso_acc, acc, loss)
+            J = loss_fn(batch_scores, batch_labels)
+            loss += J.detach().item()
+            acc_metric.update(batch_scores.squeeze(), batch_labels.squeeze())
+            f1_metric.update(batch_scores.squeeze(), batch_labels.squeeze())
+            auroc_metric.update(batch_scores.squeeze(), batch_labels.squeeze())
+            for m in confusion_metrics:
+                m.update(batch_scores.squeeze(), batch_labels.squeeze().long())
 
+            iso_acc += evaluate_iso(
+                batch_gs.graph, batch_qs.graph, batch_scores, threshold
+            )
+
+        loss /= iter + 1
+        iso_acc /= iter + 1
+    return (
+        iso_acc,
+        acc_metric.compute(),
+        f1_metric.compute(),
+        auroc_metric.compute(),
+        [m.compute() for m in confusion_metrics],
+        loss,
+    )
+
+
+def plot_roc_curve(confusion_matrices: list[torch.Tensor]) -> None:
+    # (true positive, false negative) ,
+    # (false positive, true negative)
+
+    tpr = torch.Tensor(
+        [c[0][0] / (c[0][0] + c[0][1]) for c in confusion_matrices]
+    )  # tp / (tp + fn)
+    fpr = torch.Tensor(
+        [c[1][0] / (c[1][0] + c[1][1]) for c in confusion_matrices]
+    )  # fp / (fp + tn)
+    gmeans = torch.sqrt(tpr * (1 - fpr))
+    idx = torch.argmax(gmeans)  # idx of best G-mean
+    best_threshold = idx * 0.05
+
+    plt.plot([0, 1], [0, 1], linestyle="--", label="No Skill")
+    plt.plot(fpr, tpr, marker=".", label="Model")
+    plt.scatter(
+        fpr[idx],
+        tpr[idx],
+        marker="o",
+        color="black",
+        label=f"Best (threshold = {best_threshold:.2f})",
+    )
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.legend()
+    plt.savefig("roc_plot.pdf", format="pdf", bbox_inches="tight")
+    plt.show()
+
+
+model = torch.load("./models/model_generic_class_net.pth")
+dataset = generic_class_gen.load_dataset("generic_class_10000")
+
+ms = get_module_summary(model)
+print(ms)
+
+draw_training_plot()
+analyze_dataset(dataset)
+# visualize_predictions("visu")
+
+test_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=collate)
+threshold = 0.45
+loss_fn = nn.BCELoss()
+acc_metric = BinaryAccuracy(threshold=threshold)
+f1_metric = BinaryF1Score(threshold=threshold)
+confusion_metrics = [BinaryConfusionMatrix(threshold=t * 0.05) for t in range(21)]
+auroc_metric = BinaryAUROC()
 
 res = evaluate(model, test_loader, threshold)
+consfusion_matrices = res[4]
 print(res)
+plot_roc_curve(consfusion_matrices)

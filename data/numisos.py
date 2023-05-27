@@ -5,12 +5,17 @@ import data
 from .common import *
 from res.plot_lib import set_default
 from .scaler import NormStandardScaler
+from utils import *
 
-def gen_dataset(num_g, num_q):
+def gen_dataset(num_g, num_q, min_num_nodes, max_num_nodes, edge_probability):
     def gen_g():
-        yield from gen_gnp_random(num_g, 20, 40, 0.2)
+        yield from gen_gnp_random(num_g, min_num_nodes, max_num_nodes, edge_probability)
     
-    qs = list(gen_gnp_random(num_q, 3, 6, 0.2))
+    # qs = list(gen_gnp_random(num_q, 4, 6, 0.2))
+    qs = list(gen_gnp_random(1, 3, 3, 1.0))
+    for q in qs:
+        draw(q, "")
+
     gs = list(gen_g())
 
     zipped_data = []
@@ -25,10 +30,11 @@ def gen_dataset(num_g, num_q):
     labels_tensor = torch.FloatTensor(labels)
     # print(labels_tensor)
     # set_default()
+    bins = int(max(labels))
     ax = plt.gca()
     ax.margins(0.20)
-    plt.hist(labels)
-    # plt.show()
+    plt.hist([int(l) for l in labels], bins)
+    plt.show()
 
     scaler = NormStandardScaler()
     normalized_labels = scaler.fit_tensor(labels_tensor)    
@@ -50,7 +56,6 @@ def create_artificial_features(graph: nx.Graph):
     
     graph = dgl.from_networkx(graph)    
     vertex_degrees = graph.in_degrees().view(-1, 1).float()    
-
 
     graph.ndata['feat'] = torch.cat([vertex_labels, vertex_degrees], 1)
     graph.edata['feat'] = torch.ones(graph.number_of_edges()).int()
