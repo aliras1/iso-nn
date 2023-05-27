@@ -240,7 +240,7 @@ def plot_roc_curve(confusion_matrices: list[torch.Tensor]) -> None:
 
 
 model = torch.load("./models/model_generic_class_net.pth")
-dataset = generic_class_gen.load_dataset("generic_class_10000")
+dataset = load_dataset("generic_class_10000_valid")
 
 ms = get_module_summary(model)
 print(ms)

@@ -89,9 +89,11 @@ max_num_nodes = 150
 edge_probability = 0.05
 
 start_tic = time.perf_counter()
-# dataset = gen_dataset(num_g, min_num_nodes, max_num_nodes, edge_probability)
-# save_dataset(dataset, "generic_class_regular_10000")
-dataset = load_dataset("dgl_pattern_10000")
+dataset = gen_dataset(num_g, min_num_nodes, max_num_nodes, edge_probability)
+save_dataset(dataset, "generic_class_10000_train")
+validset = gen_dataset(num_g, min_num_nodes, max_num_nodes, edge_probability)
+save_dataset(validset, "generic_class_10000_valid")
+# dataset = load_dataset("generic_class_10000_train")
 
 dataset_size = len(dataset)
 trainset_perc = 0.77
