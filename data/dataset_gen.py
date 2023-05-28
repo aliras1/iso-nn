@@ -1,14 +1,9 @@
 from functools import reduce
-import matplotlib.pyplot as plt
-import numpy as np
 from itertools import chain
 from typing import Generator, Callable, List, TypeVar
 from dgl.data import PATTERNDataset
 
-import data
 from .common import *
-from res.plot_lib import set_default
-from .scaler import NormStandardScaler
 from utils import *
 import torch.nn.functional as F
 
@@ -29,6 +24,50 @@ class DatasetWrapper:
         return g
 
 
+class ProgressBarMonad:
+    def __init__(self, total) -> None:
+        self.current = 0
+        self.total = total
+
+    def print(self, entry: any) -> any:
+        self.current += 1
+        self._print(self.current, self.total)
+        return entry
+
+    def _print(
+        self,
+        iteration: int,
+        total: int,
+        prefix: str = "",
+        suffix: str = "",
+        decimals: int = 1,
+        length: int = 20,
+        fill: str = "█",
+        printEnd: str = "\r",
+    ) -> None:
+        """
+        Call in a loop to create terminal progress bar
+        @params:
+            iteration   - Required  : current iteration (Int)
+            total       - Required  : total iterations (Int)
+            prefix      - Optional  : prefix string (Str)
+            suffix      - Optional  : suffix string (Str)
+            decimals    - Optional  : positive number of decimals in percent complete (Int)
+            length      - Optional  : character length of bar (Int)
+            fill        - Optional  : bar fill character (Str)
+            printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+        """
+        percent = ("{0:." + str(decimals) + "f}").format(
+            100 * (iteration / float(total))
+        )
+        filledLength = int(length * iteration // total)
+        bar = fill * filledLength + "-" * (length - filledLength)
+        print(f"\r{prefix} |{bar}| {percent}% {suffix}", end=printEnd)
+        # Print New Line on Complete
+        if iteration == total:
+            print()
+
+
 def node_match(u: dict, v: dict) -> bool:
     return u["l"] == v["l"]
 
@@ -36,11 +75,9 @@ def node_match(u: dict, v: dict) -> bool:
 def gen_dataset(
     dataset_size: int, min_num_nodes: int, max_num_nodes: int, edge_probability: float
 ) -> List[DatasetEntry]:
-    # gen_g = lambda: gen_smb_random(5, min_num_nodes, max_num_nodes, edge_probability)
-    # gen_p = lambda: gen_smb_random(1, 6, 8, 0.2, force_connected=True)
-
-    gen_g = lambda: gen_gnp_random(min_num_nodes, max_num_nodes, edge_probability)
-    gen_p = lambda: gen_gnp_random(6, 8, 0.2, force_connected=True)
+    print("Generating dataset...")
+    gen_g = lambda: gen_sbm_random(5, min_num_nodes, max_num_nodes, edge_probability)
+    gen_p = lambda: gen_sbm_random(1, 6, 8, 0.2, force_connected=True)
 
     return _gen_dataset(dataset_size, gen_g, gen_p)
 
@@ -61,7 +98,7 @@ def _classify_nodes(g: nx.Graph, p: nx.Graph) -> torch.FloatTensor:
         lambda subiso1, subiso2: chain(subiso1, subiso2), subiso_lists, []
     )
     subiso_nodes = torch.LongTensor(list(set(subiso_node_list)))
-    draw(p)
+
     y = torch.zeros(
         [
             g.number_of_nodes(),
@@ -75,14 +112,16 @@ def _classify_nodes(g: nx.Graph, p: nx.Graph) -> torch.FloatTensor:
 
 def _gen_dataset(
     dataset_size: int, gen_g: GraphGenerator, gen_p: GraphGenerator
-) -> List[DatasetEntry]:
+) -> list[DatasetEntry]:
     g_and_p = ((gen_g(), gen_p()) for _ in range(dataset_size))
     g_and_p_and_l = map(lambda gp: _label_graph(*gp), g_and_p)
+    progress_bar = ProgressBarMonad(dataset_size)
+    g_and_p_and_l = map(progress_bar.print, g_and_p_and_l)
 
     return list(g_and_p_and_l)
 
 
-def create_dataset_from_dgl_karate(num_graphs: int) -> List[DatasetEntry]:
+def create_dataset_from_dgl_karate(num_graphs: int) -> list[DatasetEntry]:
     def gen_g():
         dataset = KarateClubDataset()
         g = dataset[0]
@@ -94,7 +133,7 @@ def create_dataset_from_dgl_karate(num_graphs: int) -> List[DatasetEntry]:
     return _gen_dataset(num_graphs, gen_g, gen_p)
 
 
-def convert_to_internal(
+def _convert_to_internal(
     g: dgl.DGLGraph,
 ) -> DatasetEntry:
     g.ndata["l"] = g.ndata["feat"]
@@ -112,7 +151,7 @@ def create_dataset_from_dgl_pattern(
     num_graphs: int, mode: str = "train"
 ) -> List[DatasetEntry]:
     data = PATTERNDataset(mode=mode)
-    return list(map(convert_to_internal, data[:num_graphs]))
+    return list(map(_convert_to_internal, data[:num_graphs]))
 
 
 def create_dataset_from_dgl_cora(num_graphs: int) -> List[DatasetEntry]:
@@ -194,7 +233,7 @@ def _create_artificial_features(graph: nx.Graph) -> dgl.DGLGraph:
     return graph
 
 
-def create_artificial_features_dgl(dgl_graph: dgl.DGLGraph) -> dgl.DGLGraph:
+def _create_artificial_features_dgl(dgl_graph: dgl.DGLGraph) -> dgl.DGLGraph:
     vertex_labels = torch.randint(0, 4, (dgl_graph.num_nodes(),), dtype=torch.long)
     vertex_labels_one_hot = F.one_hot(vertex_labels, 4)
     vertex_degrees = dgl_graph.in_degrees().view(-1, 1).float()

@@ -17,25 +17,6 @@ from torcheval.tools import get_module_summary
 from data import *
 
 
-def draw(g: dgl.DGLGraph) -> None:
-    g_nx = dgl.to_networkx(g)
-    pos = nx.drawing.layout.spring_layout(g_nx, k=2)
-    nx.draw_networkx(
-        g_nx,
-        pos=pos,
-        node_size=300,
-        edge_color="grey",
-        cmap=plt.cm.Reds,
-        vmin=0,
-        vmax=1,
-    )
-
-    ax = plt.gca()
-    ax.margins(0.20)
-    plt.axis("off")
-    plt.show()
-
-
 def line_to_epoch(line: str) -> tuple[float, float, float, float]:
     strs = line.rstrip().split(",")
     return tuple(map(lambda x: float(x), strs))
@@ -65,7 +46,7 @@ def draw_training_plot() -> None:
         plt.show()
 
 
-def analyze_dataset(dataset: List[DatasetEntry]) -> None:
+def analyze_dataset(dataset: list[DatasetEntry]) -> None:
     print(f"dataset size: {len(dataset)}")
     graphs = [entry[0] for entry in dataset]
 
@@ -139,10 +120,6 @@ def visualize_predictions(dir: str) -> None:
     writer.close()
 
 
-def node_match(u: dict, v: dict) -> bool:
-    return (u["l"] == v["l"]).item()
-
-
 def evaluate_iso(
     g: dgl.DGLGraph, q: dgl.DGLGraph, scores: torch.Tensor, threshold: float
 ) -> float:
@@ -193,9 +170,9 @@ def evaluate(model: nn.Module, data_loader: DataLoader, threshold: float) -> tup
             for m in confusion_metrics:
                 m.update(batch_scores.squeeze(), batch_labels.squeeze().long())
 
-            iso_acc += evaluate_iso(
-                batch_gs.graph, batch_qs.graph, batch_scores, threshold
-            )
+            # iso_acc += evaluate_iso(
+            #     batch_gs.graph, batch_qs.graph, batch_scores, threshold
+            # )
 
         loss /= iter + 1
         iso_acc /= iter + 1
@@ -239,13 +216,13 @@ def plot_roc_curve(confusion_matrices: list[torch.Tensor]) -> None:
     plt.show()
 
 
-model = torch.load("./models/model_generic_class_net.pth")
+model = torch.load("./models/iso_net.pth")
 dataset = load_dataset("generic_class_10000_valid")
 
 ms = get_module_summary(model)
 print(ms)
 
-draw_training_plot()
+# draw_training_plot()
 analyze_dataset(dataset)
 # visualize_predictions("visu")
 
