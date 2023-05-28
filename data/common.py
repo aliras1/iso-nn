@@ -41,7 +41,7 @@ class GraphBatch:
         return m
 
 
-def collate_graphs(graphs: dgl.DGLGraph):
+def _collate_graphs(graphs: dgl.DGLGraph):
     sizes_n = [graph.number_of_nodes() for graph in graphs]  # graph sizes
     snorm_n = [torch.FloatTensor(size, 1).fill_(1 / size) for size in sizes_n]
     snorm_n = torch.cat(snorm_n).sqrt()  # graph size normalization
@@ -61,12 +61,12 @@ def collate(samples: list[DatasetEntry]):
         list, zip(*samples)
     )  # samples is a list of tuples (graph, patern, label)
     labels = torch.cat(labels)
-    batched_g = collate_graphs(gs)
-    batched_q = collate_graphs(qs)
+    batched_g = _collate_graphs(gs)
+    batched_q = _collate_graphs(qs)
     return batched_g, batched_q, labels
 
 
-def gen_smb_random(
+def gen_sbm_random(
     num_blocks: int,
     min_num_v: int,
     max_num_v: int,
@@ -93,16 +93,6 @@ def gen_smb_random(
     return g
 
 
-def gen_all_triangles():
-    label_combinations = combinations_with_replacement([0, 1, 2, 3], 3)
-    for label_combination in range(label_combinations):
-        g = nx.Graph(nx.cycle_graph(n=3))
-
-        for idx, label in enumerate(label_combination):
-            g.nodes[idx]["l"] = label
-        yield g
-
-
 def gen_gnp_random(
     min_num_v: int,
     max_num_v: int,
@@ -121,52 +111,30 @@ def gen_gnp_random(
     return g
 
 
-def insert_q_into_g(g: nx.Graph, q: nx.Graph):
-    size = g.number_of_nodes()
-
-    # add q to g
-    for v in range(q.number_of_nodes()):
-        g.add_node(v + size, l=q.nodes[v]["l"])
-    for u, v in q.edges:
-        g.add_edge(u + size, v + size)
-
-    # connect q and g
-    for _ in range(int(0.2 * q.number_of_nodes())):
-        u = random.randint(0, q.number_of_nodes() - 1) + size
-        v = random.randint(0, g.number_of_nodes() - 1)
-        g.add_edge(u, v)
-
-    return g
-
-
 def node_match(u: dict, v: dict):
     return u["l"] == v["l"]
 
 
-def count_subisos(g: nx.Graph, q: nx.Graph, node_match=node_match):
-    match = nx_iso.GraphMatcher(g, q, node_match=node_match)
-    subisos = match.subgraph_isomorphisms_iter()
-    num_subisos = sum((1 for _ in subisos))
-
-    return float(num_subisos)
-
-
-def save_dataset(dataset, name):
+def save_dataset(dataset: list[DatasetEntry], name: str) -> None:
+    print(f'Saving dataset "{name}"...')
     save_graphs(
-        f"./data/{name}_g.dat", [graph_and_label[0][0] for graph_and_label in dataset]
+        f"./data/{name}_generic_g.dat",
+        [graph_query_label[0] for graph_query_label in dataset],
     )
     save_graphs(
-        f"./data/{name}_q.dat", [graph_and_label[0][1] for graph_and_label in dataset]
+        f"./data/{name}_generic_q.dat",
+        [graph_query_label[1] for graph_query_label in dataset],
     )
-    with open(f"./data/{name}_l.dat", "wb") as fp:
-        pickle.dump([graph_and_label[1] for graph_and_label in dataset], fp)
+    with open(f"./data/{name}_generic_l.dat", "wb") as fp:
+        pickle.dump([graph_query_label[2] for graph_query_label in dataset], fp)
 
 
-def load_dataset(name):
-    gs = load_graphs(f"./data/{name}_g.dat")
-    qs = load_graphs(f"./data/{name}_q.dat")
-    with open(f"./data/{name}_l.dat", "rb") as fp:
+def load_dataset(name: str) -> list[DatasetEntry]:
+    print(f'Loading dataset "{name}"...')
+    gs = load_graphs(f"./data/{name}_generic_g.dat")
+    qs = load_graphs(f"./data/{name}_generic_q.dat")
+    with open(f"./data/{name}_generic_l.dat", "rb") as fp:
         ls = pickle.load(fp)
 
-    dataset = [((g, q), l) for g, q, l in zip(gs[0], qs[0], ls)]
+    dataset = [(g, q, l) for g, q, l in zip(gs[0], qs[0], ls)]
     return dataset

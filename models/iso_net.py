@@ -1,23 +1,13 @@
 import torch
 import torch.nn as nn
 import dgl
-import dgl.nn.pytorch.conv as conv
 import torch.nn.functional as F
-from functools import reduce
 
-from layers import (
-    GSNLayer,
-    ApplyGraphFunc,
-    ApplyNodeFunc,
-    GINLayer,
-    MLP,
-    SumPredictor,
-    GatedGCN_layer,
-)
+from layers import ApplyNodeFunc, GINLayer, MLP
 from data import GraphBatch
 
 
-class GenericClassNet(nn.Module):
+class IsoNet(nn.Module):
     def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, L: int):
         super().__init__()
         self.embedding_h = nn.Linear(input_dim, hidden_dim)
